@@ -3,103 +3,45 @@
 // http://nv.fotbal.cz/adresare/adresar-klubu/viewadr.asp?detail=604024
 
 error_reporting( E_ALL );
+libxml_use_internal_errors( true );
 require 'parser.php';
 
-#$input_uri = realpath( 'fixtures.html' );
-$input_uri = make_fotbalcz_uri( array(
-	'kraj'   => 'jihomoravsky',
-	'okres'  => 'breclav',
-	'soutez' => '624E2A',
-) );
+$competition = new competition( '624A2B' );
 
-/**
- * First obtain information from index page (&show=Aktual)
- */
-libxml_use_internal_errors( true );
-$doc = new DOMDocument;
-if( !$doc->loadHTMLFile( $input_uri . '&show=Aktual' ) ) {
-	error_log( 'Could not load index page' );
-	exit( 1 );
-}
+$rankings = scrape_latest_results( $competition );
+#$fixtures = scrape_fixtures( $competition );
+#$results = scrape_results( $competition );
 
-error_log( 'Index page successfully loaded' );
+#exit();
 
-$xpath = new DOMXPath( $doc );
-$container = $xpath->query(
-	'//div[@id="maincontainer"]/table[@height="300"]//td[2]' )->item( 0 );
-$tables470 = $xpath->query( './/table[@width="470"]', $container );
+echo "<h2>$competition->title</h2>";
 
-$comp_title = get_competition_title( $xpath, $container );
-$comp_id = strstr( $comp_title, ' ', true );
+if( !empty( $rankings ) ) format_rankings( $rankings );
 
-//* On index page
-/*
-$last_round_matches = get_last_round_matches( $xpath, $tables470->item( 0 ),
-	$comp_id );
-$next_round_matches = get_next_round_matches( $xpath, $tables470->item( 2 ),
-	$comp_id );
- */
-$rankings_table = get_rankings_table( $xpath, $tables470->item( 1 ) );
-//*/
+	echo "\n\n<i>Zdroj: <a href=\"$competition->uri\">FAČR</a></i>";
+#if( !empty( $fixtures ) ) format_fixtures( $fixtures );
+#if( !empty( $results ) ) format_results( $results );
 
-/**
- * Next, obtain fixtures (&show=Los)
- */
-$doc = null;
-$xpath = null;
-$doc = new DOMDocument;
-if( !$doc->loadHTMLFile( $input_uri . '&show=Los' ) ) {
-	error_log( 'Could not load fixtures page' );
-	exit( 1 );
-}
-error_log( 'Fixtures page successfully loaded' );
+# Ultimate
+exit();
 
-$xpath = new DOMXPath( $doc );
-$container = $xpath->query(
-	'//div[@id="maincontainer"]/table[@height="300"]//td[2]' )->item( 0 );
-$tables470 = $xpath->query( './/table[@width="470"]', $container );
+function format_rankings( $rankings ) {
+	$columns = [ 'Tým', 'Z', '+', '0', '-', 'Skóre', 'Body' ];
 
-//* On 'Fixtures' page
-$fixtures = get_fixtures( $xpath, $tables470, $comp_id );
-$fixtures = array_slice( $fixtures, 0, 14 );
-//*/
-
-/**
- * At last, obtain results (&show=Vysledky)
- */
-$doc = null;
-$xpath = null;
-$doc = new DOMDocument;
-if( !$doc->loadHTMLFile( $input_uri . '&show=Vysledky' ) ) {
-	error_log( 'Could not load results page' );
-	exit( 1 );
-}
-error_log( 'Results page successfully loaded' );
-
-$xpath = new DOMXPath( $doc );
-$container = $xpath->query(
-	'//div[@id="maincontainer"]/table[@height="300"]//td[2]' )->item( 0 );
-$tables470 = $xpath->query( './/table[@width="470"]', $container );
-
-//* On 'All Results' page
-$results = get_results( $xpath, $tables470, $comp_id );
-$results = array_slice( $results, 0, 14 );
-//*/
-
-echo "<h2>$comp_title</h2>\n",
-	'<i>Zdroj: <a href="' . $input_uri . '">FAČR</a></i>';
-
-if( !empty( $rankings_table ) ) {
 	echo "\n\n", '<table class="rankings">', "\n",
-		'<thead><tr><th>Tým</th><th>Z</th><th>+</th><th>0</th><th>-</th><th>Skóre</th>',
-		'<th>B</th><th>(P)</th></tr></thead>', "\n",
-		"<tbody>\n";
-	foreach( $rankings_table as $team ) {
+		'<thead><tr><th>', implode( '</th><th>', $columns ), '</th></tr></thead>',
+		"\n<tbody>\n";
+	foreach( $rankings as $team ) {
 		$add = ($team[1] === 'Klobouky') ? ' class="highlight"' : '';
 		echo '<tr', $add, '><td class="team">', $team[1], '</td>';
 
 		$other = array_slice( $team, 2 );
-		unset( $other[6] );
+		// Remove last two columns
+		array_pop( $other );
+		array_pop( $other );
+		// Remove spaces in score column
+		$other[4] = str_replace( ' ', '', $other[4] );
+
 		$other = array_map( function( $item ) { return "<td>$item</td>"; }, $other );
 
 		echo implode( '', $other ), "</tr>\n";
@@ -107,45 +49,110 @@ if( !empty( $rankings_table ) ) {
 	echo "</tbody>\n</table>";
 }
 
-if( !empty( $results ) ) {
+function format_results( $results ) {
+    echo "\n\n", '<table class="fixtures">', "\n",
+        "<thead><tr><th>Domácí</th><th>Hosté</th><th>Výsledek</th></tr></thead>\n",
+        "<tbody>\n";
 	foreach( $results as $round ) {
-		echo "\n\n<h3>" . $round['title'], "</h3>\n",
-			'<table class="fixtures">' . "\n",
-			"<thead><tr><th>Domácí</th><th>Hosté</th><th>Skóre</th></tr></thead>\n" .
-			"<tbody>\n";
 		foreach( $round['matches'] as $match ) {
-			list( $id, $host, $guest, $score ) = $match;
-
-			$add = '';
-			if( $host === 'Klobouky' || $guest === 'Klobouky' )
-				$add = ' class="highlight"';
-
-			echo '<tr' . $add . '><td class="host">' . $host . '</td><td class="guest">' .
-			   $guest . '</td><td>'	. $score . "</td></tr>\n";
+			$id = $match['id'];
+			$home = $match['home'];
+			$away = $match['away'];
+			$score = $match['score'];
+            if( $home === 'Klobouky' || $away === 'Klobouky' ) {
+                echo "<tr>\n\t", '<td class="home">' . $home . "</td>\n\t",
+                    '<td class="away">' . $away . "</td>\n\t", '<td>' . $score .
+                    "</td>\n</tr>\n";
+				#$played[] = $id;
+            }
 		}
-		echo "</tbody>\n</table>";
 	}
+    echo "</tbody>\n</table>";
 }
 
-if( !empty( $fixtures ) ) {
+function format_fixtures( $fixtures ) {
+	$days_of_week = [ 'ne', 'po', 'út', 'st', 'čt', 'pá', 'so' ];
+
+    echo "\n\n", '<table class="fixtures">', "\n",
+        "<thead><tr><th>Domácí</th><th>Hosté</th><th>Termín</th></tr></thead>\n",
+        "<tbody>\n";
 	foreach( $fixtures as $round ) {
-		echo "\n\n<h3>" . $round['title'], "</h3>\n",
-			'<table class="fixtures">' . "\n",
-			"<thead><tr><th>Domácí</th><th>Hosté</th><th>Termín</th></tr></thead>\n" .
-			"<tbody>\n";
 		foreach( $round['matches'] as $match ) {
-			list( $id, $host, $guest ) = $match;
-			$date = mb_strtolower( $match[4], 'UTF-8' ) . ' ' . $match[3];
+			$id = $match['id'];
+			$home = $match['home'];
+			$away = $match['away'];
+            if( $home === 'Klobouky' || $away === 'Klobouky' ) {
+				/*
+				if( in_array( $id, $played ) )
+					continue;
+				 */
+				$date = $days_of_week[intval( $match['date']->format( 'w' ) )] .
+					', ' . $match['date']->format( 'j. n. G:i' );
 
-			$add = '';
-			if( $host === 'Klobouky' || $guest === 'Klobouky' )
-				$add = ' class="highlight"';
-
-			echo '<tr' . $add . '><td class="host">' . $host . '</td><td class="guest">' .
-			   $guest . '</td><td>'	. $date . "</td></tr>\n";
+                echo "<tr>\n\t", '<td class="home">' . $home . "</td>\n\t",
+                    '<td class="away">' . $away . "</td>\n\t", '<td>' . $date .
+                    "</td>\n</tr>\n";
+            }
 		}
-		echo "</tbody>\n</table>";
 	}
+    echo "</tbody>\n</table>";
+}
+
+/**
+ * Scrape information from 'latest results' page (`show=Aktual`)
+ */
+function scrape_latest_results( competition &$comp ) {
+	list( $rankings, $comp_title ) = scrape_page( $comp->uri . '&show=Aktual',
+		[ 'get_rankings', 'get_competition_title' ] );
+	$comp->title = $comp_title;
+
+	#$last_round_matches = get_last_round_matches( $page, $comp_id );
+	#$next_round_matches = get_next_round_matches( $page, $comp_id );
+
+	return $rankings;
+}
+
+/**
+ * Obtain fixtures (`show=Los`)
+ */
+function scrape_fixtures( competition $comp ) {
+	list( $fixtures ) = scrape_page( $comp->uri . '&show=Los',
+		[ 'get_fixtures' ] );
+
+	return $fixtures;
+}
+
+/**
+ * Obtain results of finished matches (`show=Vysledky`)
+ */
+function scrape_results( competition $comp ) {
+	list( $results ) = scrape_page( $comp->uri . '&show=Vysledky',
+		[ 'get_results' ] );
+
+	return $results;
+}
+
+function scrape_page( $uri, array $scrapers ) {
+	if( empty( $scrapers ) ) {
+		throw new Exception( 'Cannot scrape without scrapers' );
+	}
+
+	$doc = new DOMDocument;
+	if( !$doc->loadHTMLFile( $uri ) ) {
+		throw new Exception( "Could not load page: $uri" );
+	}
+	error_log( "Page successfully loaded: $uri" );
+
+	$page = get_page_object( $doc );
+	$results = [];
+	foreach( $scrapers as $i => $func ) {
+		$results[$i] = call_user_func( $func, $page );
+	}
+
+	$page = null;
+	$doc = null;
+
+	return $results;
 }
 
 /*
@@ -191,10 +198,10 @@ if( !empty( $next_round_matches ) ) {
 	echo "\n";
 }
 
-if( !empty( $rankings_table ) ) {
+if( !empty( $rankings ) ) {
 	printf( "%16s Z  +  0  -	Skore  B   (P)\n", 'Tym' );
 	echo str_repeat( '-', 45 ), "\n";
-	foreach( $rankings_table as $team ) {
+	foreach( $rankings as $team ) {
 		printf( "%3s %12s %-2s %-2s %-2s %-2s %5s %-2s %s\n", $team[0], $team[1],
 			$team[2], $team[3], $team[4], $team[5], $team[6], $team[7], $team[9] );
 	}

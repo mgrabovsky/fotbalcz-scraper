@@ -1,28 +1,31 @@
 <?php
 
-function make_fotbalcz_uri( $soutez ) {
-	// &show=Los,Aktual,Vysledky
-	$template = '%s/souteze.asp?soutez=%s';
-	$subpath = '';
+class competition {
+	public $id, $uri, $title;
 
-	if( is_array( $soutez ) ) {
-		if( isset( $soutez['okres'] ) ) {
-			$subpath = sprintf( $template, $soutez['kraj'] . '/' . $soutez['okres'],
-				$soutez['soutez'] );
-		} else {
-			$subpath = sprintf( $template, $soutez['kraj'], $soutez['soutez'] );
-		}
-	} else {
-		$subpath = $soutez;
+	public function __construct( $id ) {
+		$this->id = $id;
+		$this->uri = "http://nv.fotbal.cz/domaci-souteze/kao/souteze.asp?soutez=$id";
 	}
-
-	$uri = 'http://nv.fotbal.cz/domaci-souteze/kao/' . $subpath;
-	return $uri;
 }
 
-function get_competition_title( DOMXPath $xpath, DOMElement $context ) {
-	$h4_texts = $xpath->query( '//h4/text()', $context );
-	return $h4_texts->item( 0 )->nodeValue;
+function get_competition_title( $page ) {
+	return $page->xpath->query( '/.//h4/text()', $page->container )->item( 0 )
+		->nodeValue;
+}
+
+function &get_page_object( DOMDocument $doc ) {
+	$xpath = new DOMXPath( $doc );
+	$container = $xpath->query(
+		'//div[@id="maincontainer"]/table[@height="300"]//td[2]' )->item( 0 );
+	$tables470 = $xpath->query( '/.//table[@width="470"]', $container );
+
+	$page = new StdClass;
+	$page->xpath = &$xpath;
+	$page->container = &$container;
+	$page->tables470 = &$tables470;
+
+	return $page;
 }
 
 /*
@@ -43,16 +46,25 @@ function get_competition_title( DOMXPath $xpath, DOMElement $context ) {
  * ID | Host | Guest | Score | Spectators | Note
  * [Branky: Goals][[; ]Cards]
  */
-function get_results( DOMXPath $xpath, DOMNodeList $tables, $comp_id ) {
-	$results = array();
-	$callback = make_text_extracting_callback( 'td/b/text()[boolean(.)]' );
-	$query = 'tr[td[1][b[boolean(text()) and ' .
-	   'starts-with(text(), "' . $comp_id . '")]]]';
+function get_results( $page ) {
+	$results = [];
+	$callback = extract_text( 'td/b/text()[boolean(.)]' );
+	$query = 'tr[(@bgcolor="#ffffff" or @bgcolor="#f8f8f8") and ' .
+		'td[1][b[boolean(text())]]]';
 
-	foreach( $tables as $table ) {
-		$title = $xpath->query( 'tr/td[@class="Titulka"]/p', $table )
+	$columns = [ 'id', 'home', 'away', 'score' ];
+
+	foreach( $page->tables470 as $table ) {
+		$title = $page->xpath->query( 'tr/td[@class="Titulka"]/p', $table )
 			->item( 0 )->nodeValue;
-		$matches = get_rows_from_table( $xpath, $query, $table, $callback );
+
+		$matches = get_rows_from_table( $page->xpath, $query, $table, $callback );
+		$matches = array_map( function( $old_match ) use( $columns ) {
+			$old_match = array_slice( $old_match, 0, 4 );
+			$match = array_combine( $columns, $old_match );
+			return $match;
+		}, $matches );
+
 		$results[] = compact( 'title', 'matches' );
 	}
 
@@ -72,12 +84,13 @@ function get_results( DOMXPath $xpath, DOMNodeList $tables, $comp_id ) {
  *
  * Rank | Team | Matches | Won | Draws | Losses | Score | Points | _PK | _PRAV
  */
-function get_rankings_table( DOMXPath $xpath, DOMElement $table ) {
-	$callback = make_text_extracting_callback( 'td/text()[boolean(.)]' );
+function get_rankings( $page ) {
+	$callback = extract_text( 'td/text()[boolean(.)]' );
 	$query = 'tr[td[1][not(@colspan) and boolean(text()) ' .
 			'and string-length(text()) <= 3]]';
 
-	return get_rows_from_table( $xpath, $query, $table, $callback );
+	return get_rows_from_table( $page->xpath, $query, $page->tables470->item( 1 ),
+		$callback );
 }
 
 /*
@@ -92,41 +105,61 @@ function get_rankings_table( DOMXPath $xpath, DOMElement $table ) {
  *
  * ID | Host | Guest | Day | DayOfWeek | Place
  */
-function get_fixtures( DOMXPath $xpath, DOMNodeList $tables, $comp_id ) {
-	$fixtures = array();
-	$callback = make_text_extracting_callback( 'td/text()[boolean(.)]' );
-	$query = 'tr[td[1][not(@colspan) and boolean(text()) and ' .
-	   'starts-with(text(), "' . $comp_id . '")]]';
+function get_fixtures( $page ) {
+	$fixtures = [];
+	$callback = extract_text( 'td/text()[boolean(.)]' );
+	$query = 'tr[td[1][not(@colspan) and boolean(text())]]';
 
-	foreach( $tables as $table ) {
-		$title = $xpath->evaluate( 'tr/td[@class="Titulka"]/p//text()', $table )
+	$columns = [ 'id', 'home', 'away', 'date' ];
+	$time_zone = new DateTimeZone( 'Europe/Prague' );
+
+	foreach( $page->tables470 as $table ) {
+		$title = $page->xpath->query( 'tr/td[@class="Titulka"]/p//text()', $table )
 			->item( 0 )->nodeValue;
-		$matches = get_rows_from_table( $xpath, $query, $table, $callback );
+
+		var_dump( $title );
+		$year = explode( '.', $title )[3];
+
+		$matches = get_rows_from_table( $page->xpath, $query, $table, $callback );
+		$matches = array_map( function( $old_match ) use( $columns, $year,
+			$time_zone )
+		{
+			$old_match = array_slice( $old_match, 0, 4 );
+			$match = array_combine( $columns, $old_match );
+
+			$match['date'] = DateTime::createFromFormat( 'd.m. H:i Y',
+				$match['date'] . ' ' . $year, $time_zone );
+
+			return $match;
+		}, $matches );
+
 		$fixtures[] = compact( 'title', 'matches' );
 	}
 
 	return $fixtures;
 }
 
-function get_last_round_matches( DOMXPath $xpath, DOMElement $table, $comp_id ) {
-	$callback = make_text_extracting_callback( 'td/b/text()[boolean(.)]' );
+function get_last_round_matches( $page, $comp_id ) {
+	$callback = extract_text( 'td/b/text()[boolean(.)]' );
 	$query =
 		'tr[td[1][not(@colspan) and b[starts-with(text(), "' . $comp_id . '")]]]';
 
-	return get_rows_from_table( $xpath, $query, $table, $callback );
+	return get_rows_from_table( $page->xpath, $query, $page->tables470->item( 0 ),
+		$callback );
 }
 
-function get_next_round_matches( DOMXPath $xpath, DOMElement $table, $comp_id ) {
-	$callback = make_text_extracting_callback( 'td/text()[boolean(.)]' );
+function get_next_round_matches( $page, $comp_id ) {
+	$callback = extract_text( 'td/text()[boolean(.)]' );
 	$query =
 		'tr[td[1][not(@colspan) and starts-with(text(), "' . $comp_id . '")]]';
 
-	return get_rows_from_table( $xpath, $query, $table, $callback );
+	return get_rows_from_table( $page->xpath, $query, $page->tables470->item( 2 ),
+		$callback );
 }
 
-function make_text_extracting_callback( $xpath_query ) {
+function extract_text( $xpath_query ) {
 	return function( DOMXPath $xpath, DOMElement $row ) use( $xpath_query ) {
-			$info = array();
+			$info = [];
 
 			$texts = $xpath->query( $xpath_query, $row );
 			foreach( $texts as $text ) {
@@ -140,7 +173,7 @@ function make_text_extracting_callback( $xpath_query ) {
 function get_rows_from_table( DOMXPath $xpath, $xpath_query, DOMElement $table,
 	$callback )
 {
-	$matches = array();
+	$matches = [];
 
 	$rows = $xpath->query( $xpath_query, $table );
 	foreach( $rows as $row ) {
