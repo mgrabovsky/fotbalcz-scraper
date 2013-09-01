@@ -1,24 +1,9 @@
 <?php
 
-class competition {
-	public $id, $uri, $title;
-
-	public function __construct( $id ) {
-		$this->id = $id;
-		$this->uri = "http://nv.fotbal.cz/domaci-souteze/kao/souteze.asp?soutez=$id";
-	}
-}
-
-function get_competition_title( $page ) {
-	return $page->xpath->query( '/.//h4/text()', $page->container )->item( 0 )
-		->nodeValue;
-}
-
-function &get_page_object( DOMDocument $doc ) {
-	$xpath = new DOMXPath( $doc );
-	$container = $xpath->query(
-		'//div[@id="maincontainer"]/table[@height="300"]//td[2]' )->item( 0 );
-	$tables470 = $xpath->query( '/.//table[@width="470"]', $container );
+function &get_page_object(DOMDocument $doc) {
+	$xpath = new DOMXPath($doc);
+	$container = $xpath->query('id("maincontainer")/table[@height="300"]//td[@width="500"]')->item(0);
+	$tables470 = $xpath->query('.//table[@width="470"]', $container);
 
 	$page = new StdClass;
 	$page->xpath = &$xpath;
@@ -28,141 +13,98 @@ function &get_page_object( DOMDocument $doc ) {
 	return $page;
 }
 
-/*
- * Results table row format
- * ------------------------
- *
- * ID: <3-letter group identifier><2-digit round integer><2-digit match integer>
- * Host, Guest: <alphanumeric + dot>
- * Score: <integer>:<integer>[ (<integer>:<integer>)]
- * Spectators: <integer>
- * Note: <anything?>
- * Goals: GoalRecord[, GoalRecord]+[ - GoalRecord[, GoalRecord]+]
- * GoalRecord: Name[ <integer>][, vlastní]
- * Name: <alpha + space + dot>
- * Cards: [ŽK: CardRecords][; ][ČK: CardRecords]
- * CardRecords: Name[, Name]+[ - Name[, Name]]
- *
- * ID | Host | Guest | Score | Spectators | Note
- * [Branky: Goals][[; ]Cards]
- */
-function get_results( $page ) {
+function get_results($page) {
 	$results = [];
-	$callback = extract_text( 'td/b/text()[boolean(.)]' );
-	$query = 'tr[(@bgcolor="#ffffff" or @bgcolor="#f8f8f8") and ' .
-		'td[1][b[boolean(text())]]]';
+	$callback = extract_text('td');
+	$rows_query = 'tr[not(@bgcolor) and td[1][not(@bgcolor) and b[boolean(text())]]]';
 
-	$columns = [ 'id', 'home', 'away', 'score' ];
+	$columns = ['id', 'home', 'away', 'score', 'spectators', 'notes'];
 
-	foreach( $page->tables470 as $table ) {
-		$title = $page->xpath->query( 'tr/td[@class="Titulka"]/p', $table )
-			->item( 0 )->nodeValue;
+	foreach ($page->tables470 as $table) {
+		$title = $page->xpath->evaluate('string(tr/td[@class="Titulka"]/p)', $table);
 
-		$matches = get_rows_from_table( $page->xpath, $query, $table, $callback );
-		$matches = array_map( function( $old_match ) use( $columns ) {
-			$old_match = array_slice( $old_match, 0, 4 );
-			$match = array_combine( $columns, $old_match );
+		$matches = get_rows_from_table($page->xpath, $rows_query, $table, $callback);
+		$matches = array_map(function($old_match) use($columns) {
+			$match = array_combine($columns, $old_match);
+			$match = array_map(function($val) {
+				$trimmed = trim($val, " \t\n\r\0\x0b\xa0\xc2");
+				if ($trimmed === '')
+					return null;
+				else
+					return $trimmed;
+			}, $match);
 			return $match;
-		}, $matches );
+		}, $matches);
 
-		$results[] = compact( 'title', 'matches' );
+		$results[] = compact('title', 'matches');
 	}
 
 	return $results;
 }
 
-/*
- * Rankings table row format
- * -------------------------
- *
- * Rank: <integer>.
- * Team: <alphanumeric + dot>
- * Matches, Won, Draws, Losses, Points: <integer>
- * Score: <integer>: <integer>
- * _PK: ?
- * _PRAV: ( [-]<integer>)
- *
- * Rank | Team | Matches | Won | Draws | Losses | Score | Points | _PK | _PRAV
- */
-function get_rankings( $page ) {
-	$callback = extract_text( 'td/text()[boolean(.)]' );
-	$query = 'tr[td[1][not(@colspan) and boolean(text()) ' .
-			'and string-length(text()) <= 3]]';
+function get_rankings($page) {
+	$callback = extract_text('td/text()[boolean(.)]');
+	$query = 'tr[td[1][not(@colspan) and boolean(text()) and string-length(text()) <= 3]]';
 
-	return get_rows_from_table( $page->xpath, $query, $page->tables470->item( 1 ),
-		$callback );
+	$columns = ['rank', 'name', 'matches', 'wins', 'draws', 'losses', 'score',
+		'points', 'pk', 'p'];
+
+	$rows = get_rows_from_table($page->xpath, $query, $page->tables470->item(1),
+		$callback);
+	$rows = array_map(function($row) use($columns) {
+		$new_row = array_combine($columns, $row);
+
+		# Clean up the score field
+		$new_row['score'] = implode(':',
+			array_map('trim',
+				explode(':', $new_row['score'])
+			)
+		);
+
+		return $new_row;
+	}, $rows);
+
+	return $rows;
 }
 
-/*
- * Fixtures table row format
- * -------------------------
- *
- * ID: <3-letter group identifier><2-digit round integer><2-digit match integer>
- * Host, Guest: <alphanumeric + punctuation>
- * Date: <2-digit day>.<2-digit month>. <2-digit hour>:<2-digit minute>
- * DayOfWeek: <2-capital-letter day of week>
- * Place: <alphanumeric + punctuation>
- *
- * ID | Host | Guest | Day | DayOfWeek | Place
- */
-function get_fixtures( $page ) {
+function get_fixtures($page) {
 	$fixtures = [];
-	$callback = extract_text( 'td/text()[boolean(.)]' );
+	$callback = extract_text('td/text()[boolean(.)]');
 	$query = 'tr[td[1][not(@colspan) and boolean(text())]]';
 
-	$columns = [ 'id', 'home', 'away', 'date' ];
-	$time_zone = new DateTimeZone( 'Europe/Prague' );
+	$columns = ['id', 'home', 'away', 'date'];
+	$time_zone = new DateTimeZone('Europe/Prague');
 
-	foreach( $page->tables470 as $table ) {
-		$title = $page->xpath->query( 'tr/td[@class="Titulka"]/p//text()', $table )
-			->item( 0 )->nodeValue;
+	foreach ($page->tables470 as $table) {
+		$title = $page->xpath->evaluate('string(tr/td[@class="Titulka"]/p)', $table);
 
-		var_dump( $title );
-		$year = explode( '.', $title )[3];
+		$year = explode('.', $title)[3];
 
-		$matches = get_rows_from_table( $page->xpath, $query, $table, $callback );
-		$matches = array_map( function( $old_match ) use( $columns, $year,
-			$time_zone )
+		$matches = get_rows_from_table($page->xpath, $query, $table, $callback);
+		$matches = array_map(function($old_match) use($columns, $year,
+			$time_zone)
 		{
-			$old_match = array_slice( $old_match, 0, 4 );
-			$match = array_combine( $columns, $old_match );
+			$old_match = array_slice($old_match, 0, 4);
+			$match = array_combine($columns, $old_match);
 
-			$match['date'] = DateTime::createFromFormat( 'd.m. H:i Y',
-				$match['date'] . ' ' . $year, $time_zone );
+			$match['date'] = DateTime::createFromFormat('d.m. H:i Y',
+				$match['date'] . ' ' . $year, $time_zone);
 
 			return $match;
-		}, $matches );
+		}, $matches);
 
-		$fixtures[] = compact( 'title', 'matches' );
+		$fixtures[] = compact('title', 'matches');
 	}
 
 	return $fixtures;
 }
 
-function get_last_round_matches( $page, $comp_id ) {
-	$callback = extract_text( 'td/b/text()[boolean(.)]' );
-	$query =
-		'tr[td[1][not(@colspan) and b[starts-with(text(), "' . $comp_id . '")]]]';
-
-	return get_rows_from_table( $page->xpath, $query, $page->tables470->item( 0 ),
-		$callback );
-}
-
-function get_next_round_matches( $page, $comp_id ) {
-	$callback = extract_text( 'td/text()[boolean(.)]' );
-	$query =
-		'tr[td[1][not(@colspan) and starts-with(text(), "' . $comp_id . '")]]';
-
-	return get_rows_from_table( $page->xpath, $query, $page->tables470->item( 2 ),
-		$callback );
-}
-
-function extract_text( $xpath_query ) {
-	return function( DOMXPath $xpath, DOMElement $row ) use( $xpath_query ) {
+function extract_text($query) {
+	return function(DOMXPath $xpath, DOMElement $row) use($query) {
 			$info = [];
 
-			$texts = $xpath->query( $xpath_query, $row );
-			foreach( $texts as $text ) {
+			$texts = $xpath->query($query, $row);
+			foreach ($texts as $text) {
 				$info[] = $text->nodeValue;
 			}
 
@@ -170,14 +112,12 @@ function extract_text( $xpath_query ) {
 		};
 }
 
-function get_rows_from_table( DOMXPath $xpath, $xpath_query, DOMElement $table,
-	$callback )
-{
+function get_rows_from_table(DOMXPath $xpath, $rows_query, DOMElement $table, $callback) {
 	$matches = [];
 
-	$rows = $xpath->query( $xpath_query, $table );
-	foreach( $rows as $row ) {
-		$matches[] = $callback( $xpath, $row );
+	$rows = $xpath->query($rows_query, $table);
+	foreach ($rows as $row) {
+		$matches[] = $callback($xpath, $row);
 	}
 
 	return $matches;

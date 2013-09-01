@@ -1,0 +1,26 @@
+<table class="rankings">
+	<thead>
+		<tr>
+			<th>Tým</th>
+			<th>Z</th>
+			<th>+</th>
+			<th>0</th>
+			<th>-</th>
+			<th>Skóre</th>
+			<th>Body</th>
+		</tr>
+	</thead>
+	<tbody>
+	{{#rankings}}
+		<tr{{{row_attrs}}}>
+			<td class="team">{{team}}</td>
+			<td>{{matches_played}}</td>
+			<td>{{wins}}</td>
+			<td>{{draws}}</td>
+			<td>{{losses}}</td>
+			<td>{{score}}</td>
+			<td>{{points}}</td>
+		</tr>
+	{{/rankings}}
+	</tbody>
+</table>
