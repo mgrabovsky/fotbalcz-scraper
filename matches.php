@@ -5,6 +5,8 @@ libxml_use_internal_errors(true);
 require_once 'parser.php';
 require_once 'vendor/autoload.php';
 
+$fixtures = [];
+$results = [];
 $played = [];
 
 function scrape_page($uri, array $scrapers) {
@@ -46,9 +48,14 @@ function scrape_fixtures() {
 
 function filter_ours($us, $rounds) {
 	$matches = array_reduce($rounds, function($memo, $round) {
-		$our = array_filter($round['matches'], function($match) {
-			return $match['home'] === 'Klobouky' || $match['away'] === 'Klobouky';
-		});
+		$our = array_reduce($round['matches'], function($memo, $match) use($round) {
+			if ($match['home'] === 'Klobouky' || $match['away'] === 'Klobouky') {
+				$roundnum = intval(explode('.', $round['title'])[0]);
+				$memo[] = $match + [ 'round' => $roundnum ];
+			}
+
+			return $memo;
+		}, []);
 
 		if (count($our) > 0)
 			$memo = array_merge($memo, $our);
@@ -60,19 +67,37 @@ function filter_ours($us, $rounds) {
 }
 
 function results() {
-	global $played;
+	global $played, $fixtures;
+	$days_of_week = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 
 	$rounds = scrape_results();
 	$matches = filter_ours('Klobouky', $rounds);
 
 	$played = array_map(function($m) { return $m['id']; }, $matches);
 
-	$results = array_map(function($match) {
+	$results = array_map(function($match) use($fixtures, $days_of_week) {
 		$row = [
-			'row_class'    => null,
+			'id'           => $match['id'],
+			'round'        => $match['round'],
+			'datetime'     => null,
+			'date'         => null,
+			'time'         => null,
 			'opponent'     => null,
+			'where'        => null,
 			'pretty_score' => null,
 		];
+
+		$fixture = array_filter($fixtures, function($f) use($match) {
+			return $f['id'] === $match['id'];
+		});
+		$fixture = array_shift( $fixture );
+
+		$row['round'] = $match['round'];
+		$row['datetime'] = $fixture['date_obj']->format('Y-m-d\TH:iO');
+		$row['date'] =
+			$days_of_week[intval($fixture['date_obj']->format('w'))] . ', ' .
+			$fixture['date_obj']->format('j. n. Y');
+		$row['time'] = $fixture['date_obj']->format('G.i \h');;
 
 		// Split score so it's easier to work with it
 		$score = array_map('intval', explode(':', $match['score']));
@@ -80,10 +105,12 @@ function results() {
 		// Assign opponent and format score
 		if ($match['home'] === 'Klobouky') {
 			$where = 'home';
+			$row['where'] = 'doma';
 			$row['opponent'] = $match['away'];
 			$row['pretty_score'] = "<b>{$score[0]}</b>:{$score[1]}";
 		} else {
 			$where = 'away';
+			$row['where'] = 'venku';
 			$row['opponent'] = $match['home'];
 			$row['pretty_score'] = "{$score[0]}:<b>{$score[1]}</b>";
 		}
@@ -115,36 +142,44 @@ function results() {
 }
 
 function fixtures() {
-	global $played;
 	$days_of_week = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 
 	$rounds = scrape_fixtures();
 	$matches = filter_ours('Klobouky', $rounds);
-	$matches = array_merge(array_filter($matches, function($m) use($played) {
-		return $m['date'] !== false && !in_array($m['id'], $played);
-	}));
 
 	$fixtures = array_map(function($match) use($days_of_week) {
 		$row = [
+			'id'              => $match['id'],
 			'row_class'       => null,
-			'opponent'        => null,
+			'round'           => $match['round'],
 			'datetime'        => null,
-			'pretty_datetime' => null,
+			'date'            => null,
+			'time'            => null,
+			'opponent'        => null,
+			'where'           => null,
 		];
+
+		if (!isset($match['date']) || !$match['date'])
+			return null;
+
+		$row['round'] = $match['round'];
+		$row['date_obj'] = &$match['date'];
+		$row['datetime'] = $match['date']->format('Y-m-d\TH:iO');
+		$row['date'] =
+			$days_of_week[intval($match['date']->format('w'))] . ', ' .
+			$match['date']->format('j. n. Y');
+		$row['time'] = $match['date']->format('G.i \h');
 
 		// Assign opponent and format score
 		if ($match['home'] === 'Klobouky') {
 			$row['row_class'] = 'home';
+			$row['where'] = 'doma';
 			$row['opponent'] = $match['away'];
 		} else {
 			$row['row_class'] = 'away';
+			$row['where'] = 'venku';
 			$row['opponent'] = $match['home'];
 		}
-
-		$row['datetime'] = $match['date']->format('Y-m-d\TH:iO');
-		$row['pretty_datetime'] =
-			$days_of_week[intval($match['date']->format('w'))] . ', ' .
-			$match['date']->format('j. n. Y G.i \h');
 
 		return $row;
 	}, $matches);
@@ -152,8 +187,12 @@ function fixtures() {
 	return $fixtures;
 }
 
+$fixtures = array_filter(fixtures());
 $results = array_reverse(results());
-$fixtures = fixtures();
+
+$fixtures = array_merge(array_filter($fixtures, function($m) use($played) {
+	return $m['date'] !== false && !in_array($m['id'], $played);
+}));
 
 // Output
 $mustache = new Mustache_Engine([
@@ -165,44 +204,4 @@ echo $mustache->render('matches', [
 	'results' => $results,
 	'fixtures' => $fixtures,
 ]);
-
-$test_data = ['results' => [[
-			'row_class' => 'away loss',
-			'opponent' => 'Uherčice',
-			'pretty_score' => '7:<i>1</i>',
-		], [
-			'row_class' => 'home loss',
-			'opponent' => 'Starovičky',
-			'pretty_score' => '<i>1</i>:2',
-		], [
-			'row_class' => 'home win',
-			'opponent' => 'Nosislav',
-			'pretty_score' => '<i>4</i>:3',
-		], [
-			'row_class' => 'away draw',
-			'opponent' => 'D. Dunajovice',
-			'pretty_score' => '0:<i>4</i>',
-		], [
-			'row_class' => 'home win',
-			'opponent' => 'Popice',
-			'pretty_score' => '<i>3</i>:1',
-		],
-	],
-	'fixtures' => [[
-			'row_class' => 'home',
-			'opponent' => 'Vrbice',
-			'datetime' => '2013-08-25T16:30+2000',
-			'pretty_datetime' => 'Sobota, 25. 8. 2013 16.30 h'
-		], [
-			'row_class' => 'away',
-			'opponent' => 'Kobylí',
-			'datetime' => '2013-09-01T16:30+2000',
-			'pretty_datetime' => 'Neděle, 1. 9. 2013 16.30 h'
-		], [
-			'row_class' => 'home',
-			'opponent' => 'Pavlov',
-			'datetime' => '2013-09-08T16:30+2000',
-			'pretty_datetime' => 'Neděle, 8. 9. 2013 16.30 h'
-		],
-	]];
 

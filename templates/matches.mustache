@@ -1,43 +1,25 @@
 <table class="results">
-	<thead>
-		<tr>
-			<th>Soupeř</th>
-			<th>Výsledek</th>
-			<th>Reportáž</th>
-		</tr>
-	</thead>
 	<tbody>
 	{{#results}}
-		<tr class="{{row_class}}">
-			<td class="opponent">{{opponent}}</td>
+		<tr>
+			<td class="round">{{round}}. kolo</td>
+			<td class="datetime"><time datetime="{{datetime}}"><span class="date">{{date}}</span> {{time}}</time></td>
+			<td><span class="opponent">{{opponent}}</span> {{where}}</td>
 			<td class="score">{{{pretty_score}}}</td>
-			<td>—→{{{report_link}}}</td>
+			<td>Reportáž</td>
 		</tr>
 	{{/results}}
 	</tbody>
 </table>
 
 <table class="fixtures">
-	<thead>
-		<tr>
-			<th>Soupeř</th>
-			<th>Datum</th>
-		</tr>
-	</thead>
 	<tbody>
 	{{#fixtures}}
-		<tr class="{{row_class}}">
-			<td class="opponent">{{opponent}}</td>
-			<td class="date"><time datetime="{{datetime}}">{{{pretty_datetime}}}</time></td>
+		<tr>
+			<td class="round">{{round}}. kolo</td>
+			<td class="datetime"><time datetime="{{datetime}}"><span class="date">{{date}}</span> {{time}}</time></td>
+			<td><span class="opponent">{{opponent}}</span> {{where}}</td>
 		</tr>
 	{{/fixtures}}
 	</tbody>
 </table>
-
-<dl class="legend">
-	<dt class="home">◌</dt> <dd>doma</dd>
-	<dt class="away">◀</dt> <dd>venku</dd>
-	<dt class="win">+</dt> <dd>výhra</dd>
-	<dt class="draw">~</dt> <dd>remíza</dd>
-	<dt class="loss">–</dt> <dd>prohra</dd>
-</dl>

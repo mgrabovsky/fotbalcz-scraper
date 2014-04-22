@@ -7,16 +7,16 @@
     "packages": [
         {
             "name": "mustache/mustache",
-            "version": "v2.4.1",
+            "version": "v2.6.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/bobthecow/mustache.php.git",
-                "reference": "v2.4.1"
+                "reference": "43dc9457a2089cf86c0f7fdb79fcdc516293a4b6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bobthecow/mustache.php/zipball/v2.4.1",
-                "reference": "v2.4.1",
+                "url": "https://api.github.com/repos/bobthecow/mustache.php/zipball/43dc9457a2089cf86c0f7fdb79fcdc516293a4b6",
+                "reference": "43dc9457a2089cf86c0f7fdb79fcdc516293a4b6",
                 "shasum": ""
             },
             "require": {
@@ -48,7 +48,7 @@
                 "mustache",
                 "templating"
             ],
-            "time": "2013-08-13 04:49:23"
+            "time": "2014-04-14 01:24:40"
         }
     ],
     "packages-dev": [
