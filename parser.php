@@ -9,7 +9,7 @@ class Fotbalcz {
 	public function __construct($group_id, $options = []) {
 		$this->group_id = $group_id;
 
-		$doc_fetcher = 'Fotbalcz\FileFetcher';
+		$doc_fetcher = 'Fotbalcz\UrlFetcher';
 		if (isset($options['document_fetcher']) &&
 			class_exists($options['document_fetcher']))
 		{
@@ -169,11 +169,37 @@ interface DocumentFetcher {
 	public function fetch_fixtures();
 }
 
-class FileFetcher implements DocumentFetcher {
+class UrlFetcher implements DocumentFetcher {
 	public function __construct($group_id) {
-		# Nothing
+		$this->group_id = $group_id;
 	}
 
+	public function fetch_rankings() {
+		return $this->load_document('Aktual');
+	}
+
+	public function fetch_results() {
+		return $this->load_document('Vysledky');
+	}
+
+	public function fetch_fixtures() {
+		return $this->load_document('Los');
+	}
+
+	private function &load_document($page) {
+		$url = "http://nv.fotbal.cz/domaci-souteze/kao/souteze.asp" .
+			"?soutez={$this->group_id}&show=$page";
+		$doc = new \DOMDocument;
+		if (!$doc->loadHTMLFile($url)) {
+			throw new \Exception("Could not load page: $url");
+		}
+		error_log("Loaded page: $url");
+
+		return $doc;
+	}
+}
+
+class FileFetcher extends UrlFetcher {
 	public function fetch_rankings() {
 		return $this->load_document('Aktual.html');
 	}
@@ -186,8 +212,8 @@ class FileFetcher implements DocumentFetcher {
 		return $this->load_document('Los.html');
 	}
 
-	private function &load_document($filename) {
-		$path = realpath('fotbal.cz/' . $filename);
+	private function &load_document($file_stem) {
+		$path = realpath("fotbal.cz/$file_stem.html");
 		$doc  = new \DOMDocument;
 		if (!$doc->loadHTMLFile($path)) {
 			throw new \Exception("Could not load file: $path");
