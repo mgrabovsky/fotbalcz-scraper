@@ -6,45 +6,8 @@ require_once 'parser.php';
 require_once 'vendor/autoload.php';
 
 $fixtures = [];
-$results = [];
-$played = [];
-
-function scrape_page($uri, array $scrapers) {
-	if (empty($scrapers)) {
-		throw new Exception('Will not scrape without callbacks');
-	}
-
-	$doc = new DOMDocument;
-	if (!$doc->loadHTMLFile($uri)) {
-		throw new Exception("Could not load page: $uri");
-	}
-	error_log("Loaded page: $uri");
-
-	$page = get_page_object($doc);
-	$results = [];
-	foreach ($scrapers as $i => $func) {
-		$results[$i] = call_user_func($func, $page);
-	}
-
-	$page = null;
-	$doc = null;
-
-	return $results;
-}
-
-function scrape_results() {
-	list($results) = scrape_page(realpath('fotbal.cz/Vysledky.html'),
-		['get_results']);
-
-	return $results;
-}
-
-function scrape_fixtures() {
-	list($fixtures) = scrape_page(realpath('fotbal.cz/Los.html'),
-		['get_fixtures']);
-
-	return $fixtures;
-}
+$results  = [];
+$played   = [];
 
 function filter_ours($us, $rounds) {
 	$matches = array_reduce($rounds, function($memo, $round) {
@@ -66,11 +29,11 @@ function filter_ours($us, $rounds) {
 	return $matches;
 }
 
-function results() {
+function results(Fotbalcz\Fotbalcz &$fotbal) {
 	global $played, $fixtures;
 	$days_of_week = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 
-	$rounds = scrape_results();
+	$rounds  = $fotbal->get_results();
 	$matches = filter_ours('Klobouky', $rounds);
 
 	$played = array_map(function($m) { return $m['id']; }, $matches);
@@ -141,10 +104,10 @@ function results() {
 	return $results;
 }
 
-function fixtures() {
+function fixtures(Fotbalcz\Fotbalcz &$fotbal) {
 	$days_of_week = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 
-	$rounds = scrape_fixtures();
+	$rounds = $fotbal->get_fixtures();
 	$matches = filter_ours('Klobouky', $rounds);
 
 	$fixtures = array_map(function($match) use($days_of_week) {
@@ -187,8 +150,10 @@ function fixtures() {
 	return $fixtures;
 }
 
-$fixtures = array_filter(fixtures());
-$results = array_reverse(results());
+$fotbal   = new Fotbalcz\Fotbalcz('624A2B');
+$fixtures = array_filter(fixtures($fotbal));
+$results  = array_reverse(results($fotbal));
+$fobal    = null;
 
 $fixtures = array_merge(array_filter($fixtures, function($m) use($played) {
 	return $m['date'] !== false && !in_array($m['id'], $played);
