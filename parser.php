@@ -201,15 +201,15 @@ class UrlFetcher implements DocumentFetcher {
 
 class FileFetcher extends UrlFetcher {
 	public function fetch_rankings() {
-		return $this->load_document('Aktual.html');
+		return $this->load_document('Aktual');
 	}
 
 	public function fetch_results() {
-		return $this->load_document('Vysledky.html');
+		return $this->load_document('Vysledky');
 	}
 
 	public function fetch_fixtures() {
-		return $this->load_document('Los.html');
+		return $this->load_document('Los');
 	}
 
 	private function &load_document($file_stem) {
