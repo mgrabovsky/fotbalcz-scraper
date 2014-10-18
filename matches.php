@@ -10,9 +10,9 @@ $results  = [];
 $played   = [];
 
 function filter_ours($us, $rounds) {
-	$matches = array_reduce($rounds, function($memo, $round) {
-		$our = array_reduce($round['matches'], function($memo, $match) use($round) {
-			if ($match['home'] === 'Klobouky' || $match['away'] === 'Klobouky') {
+	$matches = array_reduce($rounds, function($memo, $round) use($us) {
+		$our = array_reduce($round['matches'], function($memo, $match) use($us, $round) {
+			if ($match['home'] === $us || $match['away'] === $us) {
 				$roundnum = intval(explode('.', $round['title'])[0]);
 				$memo[] = $match + [ 'round' => $roundnum ];
 			}
