@@ -6,7 +6,9 @@ require_once 'parser.php';
 require_once 'vendor/autoload.php';
 
 function rankings() {
-	$fotbal   = new Fotbalcz\Fotbalcz('624A2B');
+	$fotbal   = new Fotbalcz\Fotbalcz('624A2B', [
+		'document_fetcher' => 'Fotbalcz\\FileFetcher'
+	]);
 	$rankings = $fotbal->get_rankings();
 	$fotbal   = null;
 

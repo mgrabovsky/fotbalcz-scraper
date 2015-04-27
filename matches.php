@@ -53,14 +53,20 @@ function results(Fotbalcz\Fotbalcz &$fotbal) {
 		$fixture = array_filter($fixtures, function($f) use($match) {
 			return $f['id'] === $match['id'];
 		});
-		$fixture = array_shift( $fixture );
-
+		$fixture = array_shift($fixture);
+ $row['time'] =
 		$row['round'] = $match['round'];
-		$row['datetime'] = $fixture['date_obj']->format('Y-m-d\TH:iO');
-		$row['date'] =
-			$days_of_week[intval($fixture['date_obj']->format('w'))] . ', ' .
-			$fixture['date_obj']->format('j. n. Y');
-		$row['time'] = $fixture['date_obj']->format('G.i \h');;
+		if (isset($fixture['date_obj']) && $fixture['date_obj'] instanceof \DateTime)
+		{
+			$row['datetime'] = $fixture['date_obj']->format('Y-m-d\TH:iO');
+			$row['date'] =
+				$days_of_week[intval($fixture['date_obj']->format('w'))] . ', ' .
+				$fixture['date_obj']->format('j. n. Y');
+			$row['time'] = $fixture['date_obj']->format('G.i \h');;
+		} else {
+			$row['datetime'] = '';
+			$row['date'] = $row['time'] = '?';
+		}
 
 		// Split score so it's easier to work with it
 		$score = array_map('intval', explode(':', $match['score']));
@@ -150,7 +156,9 @@ function fixtures(Fotbalcz\Fotbalcz &$fotbal) {
 	return $fixtures;
 }
 
-$fotbal   = new Fotbalcz\Fotbalcz('624A2B');
+$fotbal   = new Fotbalcz\Fotbalcz('624E2C', [
+	'document_fetcher' => 'Fotbalcz\\FileFetcher'
+]);
 $fixtures = array_filter(fixtures($fotbal));
 $results  = array_reverse(results($fotbal));
 $fobal    = null;
